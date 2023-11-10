@@ -7,29 +7,121 @@
     <title>Data Visualization - Author Network</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <script src="https://d3js.org/d3.v5.min.js"></script>
+    <style>
+        .tooltip {
+            position: fixed;
+            opacity: 0;
+            width: auto;
+            padding: 10px;
+            background: black;
+            font-family: sans-serif;
+            font-size: medium;
+            border-radius: 2px;
+            line-height: 1;
+        }
+    </style>
 </head>
 
-<body class="bg-white text-blac ">
+<body class="bg-black text-white ">
     <div class="container mx-auto text-center pt-8">
         <h3 class="text-4xl font-bold">Author Network Visualization</h3>
         <p class="text-xl mt-4">Pranav Nanaware</p>
+        <button onclick="resetVisualization()"
+            class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mt-4">Reset
+            Visualization</button>
+
         <hr class="border-b border-red-600 my-4 w-full mx-auto">
     </div>
     <div> </div>
     <div class="flex justify-center items-center">
         <svg class="flex justify-center" width="1500" height="1300"></svg>
+        <div id="tooltip"></div>
+        <div class="zoom-buttons">
+            <button onclick="zoomIn()">Zoom In</button>
+            <button onclick="zoomOut()">Zoom Out</button>
+        </div>
     </div>
 
     <script>
+        let svg;
+        let zoom; // Declare zoom in a higher scope
+
+        // Declare zoomIn and zoomOut in the global scope
+        function zoomIn() {
+            if (zoom) {
+                svg.transition().call(zoom.scaleBy, 1.2);
+            }
+        }
+
+        function zoomOut() {
+            if (zoom) {
+                svg.transition().call(zoom.scaleBy, 0.8);
+            }
+        }
+
+        function resetVisualization() {
+            // Reload the page to reset the visualization
+            location.reload();
+        }
+
         d3.json("https://raw.githubusercontent.com/p-nanaware/dv-3/main/publication_network.json").then(data => {
-            let svg = d3.select('svg').append("svg").attr("viewBox", "0 0 3000 3000")
+            svg = d3.select('svg').append("svg").attr("viewBox", "0 0 3000 3000")
             simulate(data, svg)
 
             function simulate(data, svg) {
 
+                const tooltip = d3.select("#tooltip")
+                    .append("div")
+                    .attr("class", "tooltip")
+                    .style("opacity", 0);
+
+
                 const width = parseInt(svg.attr("viewBox").split(' ')[2])
                 const height = parseInt(svg.attr("viewBox").split(' ')[3])
                 const main_group = svg.append("g").attr("transform", `translate(0, 50)`)
+                const countries = data.nodes.map(node => {
+                    const publications = node.publications;
+                    if (publications && publications.length > 0) {
+                        // Taking the country from the first publication
+                        return publications[0][Object.keys(publications[0])[0]].Country;
+                    } else {
+                        return null;
+                    }
+                });
+
+                zoom = d3.zoom()
+                    .scaleExtent([0.5, 5]) // adjust the scale extent as needed
+                    .on("zoom", zoomed);
+
+                svg.call(zoom);
+
+
+
+                function zoomed() {
+                    main_group.attr("transform", d3.event.transform);
+                }
+
+                const hexColors = [
+                    "#FF5733", "#45B8AC", "#9F44D3", "#67C7EB", "#FFA500", "#3E4095",
+                    "#7FFF00", "#FFD700", "#4CAF50", "#9C27B0", "#2E8B57", "#FF6347",
+                    "#00FFFF", "#8A2BE2", "#32CD32", "#FF69B4", "#00FA9A", "#8B4513",
+                    "#1E90FF", "#DAA520", "#008080", "#9932CC", "#556B2F", "#FF4500",
+                    "#00CED1", "#8B008B", "#6B8E23", "#FF8C00", "#1E90FF", "#20B2AA",
+                    "#FF1493", "#808000", "#B0C4DE", "#FFD700", "#2F4F4F", "#8B0000",
+                    "#008B8B", "#A52A2A", "#7B68EE", "#228B22", "#800000", "#4682B4",
+                    "#00FF7F", "#CD853F", "#BDB76B", "#ADFF2F", "#FF00FF", "#FF4500",
+                    "#4B0082", "#87CEEB", "#8B4513", "#9400D3", "#32CD32", "#9932CC",
+                    "#B8860B", "#8A2BE2", "#228B22", "#FFA07A", "#48D1CC", "#800080",
+                    "#2F4F4F", "#FA8072", "#6495ED", "#006400", "#8B008B", "#8B0000"
+                ];
+
+
+
+                // Filter out nodes without country information
+                const nodesWithCountry = data.nodes.filter((node, index) => countries[index] !== null);
+                const color = d3.scaleOrdinal(hexColors)
+                    .domain(Array.from(new Set(countries.filter(country => country !== null))));
+
 
                 //calculate degree of the nodes:
                 const node_degree = {}; //initiate an object
@@ -57,19 +149,20 @@
                     .domain(d3.extent(data.links, d => d.year))
                     .range([1, 5])
 
-                const color = d3.scaleSequential()
-                    .domain([1995, 2020])
-                    .interpolator(d3.interpolateBuGn);
-
-
                 const link_elements = main_group.append("g")
                     .attr('transform', `translate(${width / 2},${height / 2})`)
                     .selectAll(".line")
                     .data(data.links)
                     .enter()
                     .append("line")
-                    .style("stroke", (d) => { return "gray"; })
+                    .style("stroke", (d) => { return "white"; })
                     .style("stroke-width", d => scale_link_stroke_width(10));
+
+                const drag = d3.drag()
+                    .on("start", dragstarted)
+                    .on("drag", dragged)
+                    .on("end", dragended);
+
 
                 const node_elements = main_group.append("g")
                     .attr('transform', `translate(${width / 2},${height / 2})`)
@@ -77,26 +170,63 @@
                     .data(data.nodes)
                     .enter()
                     .append('g')
-                    .on("mouseover", function (d, data) {
-                        d3.select(".title").text(data[0]).attr('transform', `translate(20,-530)`)
-                        node_elements.classed("inactive", true)
-                        const sel_class = d3.select(this).attr("class").split(" ")[0];
-                        d3.select("." + sel_class).classed("inactive", false)
+                    .call(drag)
+                    .on("mouseenter", function (d, data) {
+                        const [x, y] = d3.mouse(svg.node());
+                        tooltip.transition()
+                            .duration(200)
+                            .style("opacity", .9)
+                            .style("top", (y) + "py") // Adjust the vertical position
+                            .style("left", (x) + "px");
+                        tooltip.html(`<strong>Author ID:</strong> ${d.id}`)
+
+                    })
+                    .on("mousemove", (m, d) => {
+                        tooltip.style("opacity", .9)
                     })
                     .on("mouseout", function (d) {
-                        d3.selectAll(".title").text(" ")
+                        tooltip.transition()
+                            .duration(400)
+                            .style("opacity", 0)
+                        d3.selectAll("title").text(" ")
                         d3.selectAll(".inactive").classed("inactive", false)
                     })
 
 
                 node_elements.append("circle")
                     .attr("r", (d, i) => { return scale_radius(node_degree[d['id']] * 1.2) })
-                    .attr("fill", (d) => { return "steelblue"; })
+                    .attr("fill", (d, i) => color(countries[i]));
 
                 node_elements.append("text")
                     .attr("class", "title")
                     .attr("text-anchor", "middle")
                     .text(d => d.title)
+
+                const legend = svg.append("g")
+                    .attr("class", "legend")
+                    .attr("transform", "translate(20,20)");
+
+                const legendRectSize = 18;
+                const legendSpacing = 4;
+
+                const legendItems = legend.selectAll('.legend-item')
+                    .data(color.domain())
+                    .enter()
+                    .append('g')
+                    .attr('class', 'legend-item')
+                    .attr('transform', (d, i) => `translate(0,${i * (legendRectSize + legendSpacing)})`);
+
+                legendItems.append('rect')
+                    .attr('width', legendRectSize)
+                    .attr('height', legendRectSize)
+                    .style('fill', color);
+
+                legendItems.append('text')
+                    .attr('x', legendRectSize + legendSpacing)
+                    .attr('y', legendRectSize - legendSpacing)
+                    .style('fill', 'white')  // Add this line to set the text color to white
+                    .text(d => d);
+
 
                 const ForceSimulation = d3.forceSimulation(data.nodes)
                     .force("collide",
@@ -112,6 +242,7 @@
                     .on("tick", ticked);
                 //console.log(node_elements)
 
+
                 function ticked() {
                     node_elements.attr('transform', (d) => `translate(${d.x},${d.y})`)
                     link_elements
@@ -120,8 +251,25 @@
                         .attr("y1", d => d.source.y)
                         .attr("y2", d => d.target.y)
                 }
-            }
+                function dragstarted(d) {
+                    if (!d3.event.active) ForceSimulation.alphaTarget(0.3).restart();
+                    d.fx = d.x;
+                    d.fy = d.y;
+                }
 
+                function dragged(d) {
+                    d.fx = d3.event.x;
+                    d.fy = d3.event.y;
+                }
+
+                function dragended(d) {
+                    if (!d3.event.active) ForceSimulation.alphaTarget(0);
+                    d.fx = null;
+                    d.fy = null;
+                }
+
+
+            }
         })
     </script>
 </body>
