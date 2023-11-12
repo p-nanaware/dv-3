@@ -32,7 +32,39 @@
 
         <hr class="border-b border-red-600 my-4 w-full mx-auto">
     </div>
-    <div> </div>
+
+
+    <div class="container mx-auto mt-4 p-4 bg-gray-800">
+        <form id="controlForm">
+            <label for="linkStrength">Link Strength:</label>
+            <input type="range" id="linkStrength" min="0.1" max="2" step="0.1" value="1">
+            <br>
+
+            <label for="collideForce">Collide Force:</label>
+            <input type="range" id="collideForce" min="0" max="1" step="0.1" value="0">
+            <br>
+
+            <label for="chargeForce">Charge Force:</label>
+            <input type="range" id="chargeForce" min="-200" max="10" step="10" value="-80">
+            <br>
+
+            <label>Node Size:</label>
+            <br>
+            <input type="radio" id="pubCount" name="nodeSize" value="publications">
+            <label for="pubCount">Number of Publications</label>
+
+            <input type="radio" id="degree" name="nodeSize" value="degree" checked>
+            <label for="degree">Degree</label>
+
+            <input type="radio" id="citationCount" name="nodeSize" value="citations">
+            <label for="citationCount">Number of Citations</label>
+            <br>
+
+            <button type="button" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mt-4"
+                onclick="applySettings()">Apply Settings</button>
+        </form>
+    </div>
+
     <div class="flex justify-center items-center">
         <svg class="flex justify-center" width="1500" height="1300"></svg>
         <div id="tooltip"></div>
@@ -44,9 +76,17 @@
 
     <script>
         let svg;
-        let zoom; // Declare zoom in a higher scope
+        let zoom;
+        let ForceSimulation;
+        let node_elements;
+        let link_elements;
+        let node_degree;
+        let scale_radius;
+        let data;
+        let color;
+        let countries;
+        let original_degree;
 
-        // Declare zoomIn and zoomOut in the global scope
         function zoomIn() {
             if (zoom) {
                 svg.transition().call(zoom.scaleBy, 1.2);
@@ -60,217 +100,254 @@
         }
 
         function resetVisualization() {
-            // Reload the page to reset the visualization
             location.reload();
         }
 
-        d3.json("https://raw.githubusercontent.com/p-nanaware/dv-3/main/publication_network.json").then(data => {
+        function applySettings() {
+            linkStrength = parseFloat(document.getElementById('linkStrength').value);
+            collideForce = parseFloat(document.getElementById('collideForce').value);
+            chargeForce = parseFloat(document.getElementById('chargeForce').value);
+            nodeSize = document.querySelector('input[name="nodeSize"]:checked').value;
+            ForceSimulation.force("link", d3.forceLink(data.links)
+                .id(d => d.id)
+                .distance(80)
+                .strength(linkStrength))
+            ForceSimulation.force("collide").strength(collideForce);
+            ForceSimulation.force("charge", d3.forceManyBody().strength(chargeForce))
+
+
+            node_elements.select("circle").attr("r", (d, i) => {
+                switch (nodeSize) {
+                    case "publications":
+                        node_degree = {}
+                        data.nodes.map((node, index) => {
+                            node_degree[data.nodes[index].id] = (data.nodes[index].publications).length
+                        })
+                        return scale_radius(node_degree[d['id']] * 1.2)
+                    case "degree":
+                        return scale_radius(original_degree[d['id']] * 1.2);
+                    case "citations":
+                        let node_degree = {};
+                        data.nodes.forEach((node, index) => {
+                            const totalCitations = node.publications.reduce((sum, publication) => {
+                                return sum + publication[Object.keys(publication)[0]].Citations;
+                            }, 0);
+
+                            node_degree[data.nodes[index].id] = totalCitations;
+                        });
+                        return scale_radius(node_degree[d['id']]);
+                    default:
+                        return scale_radius(node_degree[d['id']] * 1.2);
+                }
+            }).attr("fill", (d, i) => color(countries[i]));
+
+            ForceSimulation.nodes(data.nodes);
+            ForceSimulation.alpha(1).restart();
+        }
+
+        d3.json("https://raw.githubusercontent.com/p-nanaware/dv-3/main/publication_network.json").then(jsonData => {
+            data = jsonData
             svg = d3.select('svg').append("svg").attr("viewBox", "0 0 3000 3000")
-            simulate(data, svg)
-
-            function simulate(data, svg) {
-
-                const tooltip = d3.select("#tooltip")
-                    .append("div")
-                    .attr("class", "tooltip")
-                    .style("opacity", 0);
 
 
-                const width = parseInt(svg.attr("viewBox").split(' ')[2])
-                const height = parseInt(svg.attr("viewBox").split(' ')[3])
-                const main_group = svg.append("g").attr("transform", `translate(0, 50)`)
-                const countries = data.nodes.map(node => {
-                    const publications = node.publications;
-                    if (publications && publications.length > 0) {
-                        // Taking the country from the first publication
-                        return publications[0][Object.keys(publications[0])[0]].Country;
-                    } else {
-                        return null;
-                    }
-                });
-
-                zoom = d3.zoom()
-                    .scaleExtent([0.5, 5]) // adjust the scale extent as needed
-                    .on("zoom", zoomed);
-
-                svg.call(zoom);
+            const tooltip = d3.select("#tooltip")
+                .append("div")
+                .attr("class", "tooltip")
+                .style("opacity", 0);
 
 
-
-                function zoomed() {
-                    main_group.attr("transform", d3.event.transform);
+            const width = parseInt(svg.attr("viewBox").split(' ')[2])
+            const height = parseInt(svg.attr("viewBox").split(' ')[3])
+            const main_group = svg.append("g").attr("transform", `translate(0, 50)`)
+            countries = data.nodes.map(node => {
+                const publications = node.publications;
+                if (publications && publications.length > 0) {
+                    return publications[0][Object.keys(publications[0])[0]].Country;
+                } else {
+                    return null;
                 }
+            });
 
-                const hexColors = [
-                    "#FF5733", "#45B8AC", "#9F44D3", "#67C7EB", "#FFA500", "#3E4095",
-                    "#7FFF00", "#FFD700", "#4CAF50", "#9C27B0", "#2E8B57", "#FF6347",
-                    "#00FFFF", "#8A2BE2", "#32CD32", "#FF69B4", "#00FA9A", "#8B4513",
-                    "#1E90FF", "#DAA520", "#008080", "#9932CC", "#556B2F", "#FF4500",
-                    "#00CED1", "#8B008B", "#6B8E23", "#FF8C00", "#1E90FF", "#20B2AA",
-                    "#FF1493", "#808000", "#B0C4DE", "#FFD700", "#2F4F4F", "#8B0000",
-                    "#008B8B", "#A52A2A", "#7B68EE", "#228B22", "#800000", "#4682B4",
-                    "#00FF7F", "#CD853F", "#BDB76B", "#ADFF2F", "#FF00FF", "#FF4500",
-                    "#4B0082", "#87CEEB", "#8B4513", "#9400D3", "#32CD32", "#9932CC",
-                    "#B8860B", "#8A2BE2", "#228B22", "#FFA07A", "#48D1CC", "#800080",
-                    "#2F4F4F", "#FA8072", "#6495ED", "#006400", "#8B008B", "#8B0000"
-                ];
+            zoom = d3.zoom()
+                .scaleExtent([0.5, 5])
+                .on("zoom", zoomed);
+
+            svg.call(zoom);
 
 
 
-                // Filter out nodes without country information
-                const nodesWithCountry = data.nodes.filter((node, index) => countries[index] !== null);
-                const color = d3.scaleOrdinal(hexColors)
-                    .domain(Array.from(new Set(countries.filter(country => country !== null))));
+            function zoomed() {
+                main_group.attr("transform", d3.event.transform);
 
-
-                //calculate degree of the nodes:
-                const node_degree = {}; //initiate an object
-                d3.map(data.links, d => {
-                    if (d.source in node_degree) {
-                        node_degree[d.source]++
-                    }
-                    else {
-                        node_degree[d.source] = 0
-                    }
-                    if (d.target in node_degree) {
-                        node_degree[d.target]++
-                    }
-                    else {
-                        node_degree[d.target] = 0
-                    }
-                });
-
-                const scale_radius = d3.scaleLinear()
-                    .domain(d3.extent(Object.values(node_degree)))
-                    .range([5, 20]); // Adjust the range to change the node size
-
-
-                const scale_link_stroke_width = d3.scaleLinear()
-                    .domain(d3.extent(data.links, d => d.year))
-                    .range([1, 5])
-
-                const link_elements = main_group.append("g")
-                    .attr('transform', `translate(${width / 2},${height / 2})`)
-                    .selectAll(".line")
-                    .data(data.links)
-                    .enter()
-                    .append("line")
-                    .style("stroke", (d) => { return "white"; })
-                    .style("stroke-width", d => scale_link_stroke_width(10));
-
-                const drag = d3.drag()
-                    .on("start", dragstarted)
-                    .on("drag", dragged)
-                    .on("end", dragended);
-
-
-                const node_elements = main_group.append("g")
-                    .attr('transform', `translate(${width / 2},${height / 2})`)
-                    .selectAll(".circle")
-                    .data(data.nodes)
-                    .enter()
-                    .append('g')
-                    .call(drag)
-                    .on("mouseenter", function (d, data) {
-                        const [x, y] = d3.mouse(svg.node());
-                        tooltip.transition()
-                            .duration(200)
-                            .style("opacity", .9)
-                            .style("top", (y) + "py") // Adjust the vertical position
-                            .style("left", (x) + "px");
-                        tooltip.html(`<strong>Author ID:</strong> ${d.id}`)
-
-                    })
-                    .on("mousemove", (m, d) => {
-                        tooltip.style("opacity", .9)
-                    })
-                    .on("mouseout", function (d) {
-                        tooltip.transition()
-                            .duration(400)
-                            .style("opacity", 0)
-                        d3.selectAll("title").text(" ")
-                        d3.selectAll(".inactive").classed("inactive", false)
-                    })
-
-
-                node_elements.append("circle")
-                    .attr("r", (d, i) => { return scale_radius(node_degree[d['id']] * 1.2) })
-                    .attr("fill", (d, i) => color(countries[i]));
-
-                node_elements.append("text")
-                    .attr("class", "title")
-                    .attr("text-anchor", "middle")
-                    .text(d => d.title)
-
-                const legend = svg.append("g")
-                    .attr("class", "legend")
-                    .attr("transform", "translate(20,20)");
-
-                const legendRectSize = 18;
-                const legendSpacing = 4;
-
-                const legendItems = legend.selectAll('.legend-item')
-                    .data(color.domain())
-                    .enter()
-                    .append('g')
-                    .attr('class', 'legend-item')
-                    .attr('transform', (d, i) => `translate(0,${i * (legendRectSize + legendSpacing)})`);
-
-                legendItems.append('rect')
-                    .attr('width', legendRectSize)
-                    .attr('height', legendRectSize)
-                    .style('fill', color);
-
-                legendItems.append('text')
-                    .attr('x', legendRectSize + legendSpacing)
-                    .attr('y', legendRectSize - legendSpacing)
-                    .style('fill', 'white')  // Add this line to set the text color to white
-                    .text(d => d);
-
-
-                const ForceSimulation = d3.forceSimulation(data.nodes)
-                    .force("collide",
-                        d3.forceCollide().radius((d, i) => { return scale_radius(node_degree[i]) * 5 }))
-                    .force("x", d3.forceX())
-                    .force("y", d3.forceY())
-                    .force("charge", d3.forceManyBody().strength(-80))
-                    .force("link", d3.forceLink(data.links)
-                        .id(d => d.id)
-                        .distance(80)
-                        .strength(1)
-                    )
-                    .on("tick", ticked);
-                //console.log(node_elements)
-
-
-                function ticked() {
-                    node_elements.attr('transform', (d) => `translate(${d.x},${d.y})`)
-                    link_elements
-                        .attr("x1", d => d.source.x)
-                        .attr("x2", d => d.target.x)
-                        .attr("y1", d => d.source.y)
-                        .attr("y2", d => d.target.y)
-                }
-                function dragstarted(d) {
-                    if (!d3.event.active) ForceSimulation.alphaTarget(0.3).restart();
-                    d.fx = d.x;
-                    d.fy = d.y;
-                }
-
-                function dragged(d) {
-                    d.fx = d3.event.x;
-                    d.fy = d3.event.y;
-                }
-
-                function dragended(d) {
-                    if (!d3.event.active) ForceSimulation.alphaTarget(0);
-                    d.fx = null;
-                    d.fy = null;
-                }
-
-
+                svg.attr("transform", d3.event.transform);
             }
-        })
+
+            const hexColors = [
+                "#FF5733", "#45B8AC", "#9F44D3", "#67C7EB", "#FFA500", "#3E4095",
+                "#7FFF00", "#FFD700", "#4CAF50", "#9C27B0", "#2E8B57", "#FF6347",
+                "#00FFFF", "#8A2BE2", "#32CD32", "#FF69B4", "#00FA9A", "#8B4513",
+                "#1E90FF", "#DAA520", "#008080", "#9932CC", "#556B2F", "#FF4500",
+                "#00CED1", "#8B008B", "#6B8E23", "#FF8C00", "#1E90FF", "#20B2AA",
+                "#FF1493", "#808000", "#B0C4DE", "#FFD700", "#2F4F4F", "#8B0000",
+                "#008B8B", "#A52A2A", "#7B68EE", "#228B22", "#800000", "#4682B4",
+                "#00FF7F", "#CD853F", "#BDB76B", "#ADFF2F", "#FF00FF", "#FF4500",
+                "#4B0082", "#87CEEB", "#8B4513", "#9400D3", "#32CD32", "#9932CC",
+                "#B8860B", "#8A2BE2", "#228B22", "#FFA07A", "#48D1CC", "#800080",
+                "#2F4F4F", "#FA8072", "#6495ED", "#006400", "#8B008B", "#8B0000"
+            ];
+
+
+            const nodesWithCountry = data.nodes.filter((node, index) => countries[index] !== null);
+            color = d3.scaleOrdinal(hexColors)
+                .domain(Array.from(new Set(countries.filter(country => country !== null))));
+
+
+            node_degree = {};
+            d3.map(data.links, d => {
+                if (d.source in node_degree) {
+                    node_degree[d.source]++
+                }
+                else {
+                    node_degree[d.source] = 0
+                }
+                if (d.target in node_degree) {
+                    node_degree[d.target]++
+                }
+                else {
+                    node_degree[d.target] = 0
+                }
+            });
+
+            original_degree = node_degree;
+            scale_radius = d3.scaleLinear()
+                .domain(d3.extent(Object.values(node_degree)))
+                .range([5, 20]);
+
+
+            const scale_link_stroke_width = d3.scaleLinear()
+                .domain(d3.extent(data.links, d => d.year))
+                .range([1, 5])
+
+            link_elements = main_group.append("g")
+                .attr('transform', `translate(${width / 2},${height / 2})`)
+                .selectAll(".line")
+                .data(data.links)
+                .enter()
+                .append("line")
+                .style("stroke", (d) => { return "white"; })
+                .style("stroke-width", d => scale_link_stroke_width(10));
+
+
+            const drag = d3.drag()
+                .on("start", dragstarted)
+                .on("drag", dragged)
+                .on("end", dragended);
+
+
+            node_elements = main_group.append("g")
+                .attr('transform', `translate(${width / 2},${height / 2})`)
+                .selectAll(".circle")
+                .data(data.nodes)
+                .enter()
+                .append('g')
+                .call(drag)
+                .on("mouseenter", function (d, data) {
+                    const [x, y] = d3.mouse(svg.node());
+                    tooltip.transition()
+                        .duration(200)
+                        .style("opacity", .9)
+                        .style("top", (y) + "py")
+                        .style("left", (x) + "px");
+                    tooltip.html(`<strong>Author ID:</strong> ${d.id}`)
+
+                })
+                .on("mousemove", (m, d) => {
+                    tooltip.style("opacity", .9)
+                })
+                .on("mouseout", function (d) {
+                    tooltip.transition()
+                        .duration(400)
+                        .style("opacity", 0)
+                    d3.selectAll("title").text(" ")
+                    d3.selectAll(".inactive").classed("inactive", false)
+                })
+
+
+            node_elements.append("circle")
+                .attr("r", (d, i) => { return scale_radius(node_degree[d['id']] * 1.2) })
+                .attr("fill", (d, i) => color(countries[i]));
+
+            node_elements.append("text")
+                .attr("class", "title")
+                .attr("text-anchor", "middle")
+                .text(d => d.title)
+
+            const legend = svg.append("g")
+                .attr("class", "legend")
+                .attr("transform", "translate(20,20)");
+
+            const legendRectSize = 18;
+            const legendSpacing = 4;
+
+            const legendItems = legend.selectAll('.legend-item')
+                .data(color.domain())
+                .enter()
+                .append('g')
+                .attr('class', 'legend-item')
+                .attr('transform', (d, i) => `translate(0,${i * (legendRectSize + legendSpacing)})`);
+
+            legendItems.append('rect')
+                .attr('width', legendRectSize)
+                .attr('height', legendRectSize)
+                .style('fill', color);
+
+            legendItems.append('text')
+                .attr('x', legendRectSize + legendSpacing)
+                .attr('y', legendRectSize - legendSpacing)
+                .style('fill', 'white')
+                .text(d => d);
+
+
+            ForceSimulation = d3.forceSimulation(data.nodes)
+                .force("collide",
+                    d3.forceCollide().radius((d, i) => { return scale_radius(node_degree[i]) * 5 }).strength(0))
+                .force("x", d3.forceX())
+                .force("y", d3.forceY())
+                .force("charge", d3.forceManyBody().strength(-80))
+                .force("link", d3.forceLink(data.links)
+                    .id(d => d.id)
+                    .distance(80)
+                    .strength(1)
+                )
+                .on("tick", ticked);
+
+
+            function ticked() {
+                node_elements.attr('transform', (d) => `translate(${d.x},${d.y})`)
+                link_elements
+                    .attr("x1", d => d.source.x)
+                    .attr("x2", d => d.target.x)
+                    .attr("y1", d => d.source.y)
+                    .attr("y2", d => d.target.y)
+            }
+            function dragstarted(d) {
+                if (!d3.event.active) ForceSimulation.alphaTarget(0.3).restart();
+                d.fx = d.x;
+                d.fy = d.y;
+            }
+
+            function dragged(d) {
+                d.fx = d3.event.x;
+                d.fy = d3.event.y;
+            }
+
+            function dragended(d) {
+                if (!d3.event.active) ForceSimulation.alphaTarget(0);
+                d.fx = null;
+                d.fy = null;
+            }
+        });
+
     </script>
 </body>
 
