@@ -148,7 +148,7 @@
             ForceSimulation.alpha(1).restart();
         }
 
-        d3.json("https://raw.githubusercontent.com/p-nanaware/dv-3/main/publication_network.json").then(jsonData => {
+        d3.json("https://raw.githubusercontent.com/p-nanaware/dv-3/main/publication_network1.json").then(jsonData => {
             data = jsonData
             svg = d3.select('svg').append("svg").attr("viewBox", "0 0 3000 3000")
 
@@ -165,7 +165,6 @@
             countries = data.nodes.map(node => {
                 const publications = node.publications;
                 if (publications && publications.length > 0) {
-                    console.log(publications)
                     return publications[0][Object.keys(publications[0])[0]].Country;
                 } else {
                     return null;
