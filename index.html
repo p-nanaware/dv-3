@@ -135,7 +135,7 @@
 
                             node_degree[data.nodes[index].id] = totalCitations;
                         });
-                        return scale_radius(node_degree[d['id']]);
+                        return scale_radius(node_degree[d['id']] * 1.2);
                     default:
                         return scale_radius(node_degree[d['id']] * 1.2);
                 }
